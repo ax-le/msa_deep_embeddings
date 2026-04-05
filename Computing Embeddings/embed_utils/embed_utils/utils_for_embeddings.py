@@ -1,9 +1,14 @@
-import librosa
+"""
+Utils for computing embeddings, such as loading datasets, cutting the signal according to bars, etc.
+"""
+
 import os
 import copy
 import numpy as np
 
-def load_dataset(dataset_path, dataset="rwcpop"):
+def load_dataset(dataset_path, dataset="rwcpop"): 
+    # Load all data paths.
+    # Use this instead of mirdata, to avoid installing the package. Ugly, but works.
     paths_lists = []
     if dataset in ["rwcpop", "salami", "harmonix"]:
         for file in os.listdir(dataset_path):
@@ -21,9 +26,11 @@ def load_dataset(dataset_path, dataset="rwcpop"):
     return paths_lists
 
 def bars_in_time_to_samples(bars, sr):
+    # Converts bar times in frame indices.
     return np.array([[int(bar[0]*sr), int(bar[1]*sr)] for bar in bars])
 
 def cut_signal_on_bars(signal, bars, sr):
+    # Cut the signal in barwise excerpts, that will be embeded individually.
     assert bars.shape[0] > 0, "Bars list is empty."
     barwise_signal = []
     if bars[0][0] == 0: # or (bars[0][1] - bars[0][0] < 0.5):

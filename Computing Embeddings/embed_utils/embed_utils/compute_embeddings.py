@@ -1,7 +1,13 @@
+"""
+Encapsulation functions to load audio, compute embeddings, format them as 2D matrices, and then store for segmentation later on.
+
+!! Assumes that bars are already computed and stored somewhere, to avoid a required venv compatibility with the downbeats estimator package.
+"""
+
 import os
 import librosa
 import numpy as np
-import embed_utils.utils_for_codecs as utils
+import embed_utils.utils_for_embeddings as utils
 
 DATASET_DEFAULT_PATH = "/Brain/public/datasets/MIR"
 CACHE_DEFAULT_PATH = "/Brain/private/a23marmo/projects/cbm_embeddings/cache"
@@ -94,7 +100,10 @@ def compute_barwise_embeddings(
             )
 
         # Load bars
-        bars = np.load(f"{bars_dir}/{song_id}.npy", allow_pickle=True)
+        try:
+            bars = np.load(f"{bars_dir}/{song_id}.npy", allow_pickle=True)
+        except FileNotFoundError:
+            raise NotImplementedError("Sorry, this code was developed assuming that bars were already computed. This is not a good practice, and will be enhanced in near future. TODO.")
 
         if bars.shape[0] == 0:
             if verbose:
@@ -127,7 +136,8 @@ def compute_barwise_embeddings(
 
 
 def _embed_bars_time(wv_cut_in_bars, model, processor, embed_fn, time_reduction_method="mean", time_axis=None, verbose=True, **embed_kwargs):
-    """Embed each bar with *embed_fn* and reduce varying time axes by averaging."""
+    """Embed each bar with *embed_fn* and reduce varying time axes by averaging.
+    *embed_fn* has to be defined in each model."""
     barwise_embeddings_gpu = []
     for i, bar in enumerate(wv_cut_in_bars):
         if verbose:

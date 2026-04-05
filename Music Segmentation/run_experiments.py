@@ -1,10 +1,6 @@
 """
 Experiment runner for CBM segmentation on codec embeddings.
-
-Evaluates all combinations of:
-  - Embedding models (codicodec, music2latent) with their config variants
-  - Similarity functions (cosine, autocorrelation, rbf, centered_rbf)
-  - CBM penalty weights (0, 1)
+Was heavily vibe-coded.
 
 Produces per-condition scores (precision, recall, F1) at two tolerances
 (0.5s and 3s), averaged across songs with standard deviation.
@@ -19,8 +15,6 @@ from itertools import product
 from datetime import datetime
 
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 
 from as_seg.CBM_algorithm import CBMEstimator
 from as_seg.baseline_segmenter.baseline_estimators import FooteEstimator, LSDEstimator
@@ -28,6 +22,59 @@ from sklearn.base import BaseEstimator
 from typing import Protocol
 from msa_dataloader import RWCPopDataloader, SALAMIDataloader, HarmonixDataloader
 
+
+# ---------------------------------------------------------------------------
+# Hardcoded paths
+# ---------------------------------------------------------------------------
+
+DATASET_DEFAULT_PATH = "/Brain/public/datasets/MIR"
+PROJECT_DEFAULT_PATH = "/Brain/private/a23marmo/projects/cbm_embeddings"
+
+# ---------------------------------------------------------------------------
+# Experiments configuration
+# ---------------------------------------------------------------------------
+
+# Map dataset name → (DataloaderClass, download, extra_kwargs)
+DATASET_REGISTRY: dict[str, tuple] = {
+    "rwcpop":  (RWCPopDataloader,   True, {}),
+    "salami":  (SALAMIDataloader,   True,  {"subset": "test"}),
+    "harmonix": (HarmonixDataloader, True, {}),
+}
+
+# Each entry: (model_name, {config_key: [possible_values], ...})
+# An empty dict means no config variants.
+MODEL_CONFIGS: dict[str, dict[str, list]] = {
+    "dac": {},
+    "codicodec":     {"discrete": [True, False]},
+    # "music2latent":  {"extract_features": [True, False]},
+    "AudioMAE": {},
+    "m2d": {"_space": ["audio", "audio_text"]}, 
+    "matpac_plus": {},
+    "MERT/m-a-p/MERT-v1-95M": {},
+    "OpenMuQ": {"_space": ["audio", "audio_text"]},
+    "musicfm": {},
+    "CLAP/laion/clap-htsat-unfused": {},
+}
+
+SIMILARITIES = ["cosine", "rbf"]
+PENALTY_WEIGHTS = [0]
+BANDS_NUMBERS = [None, 7]  # None = full kernel, 7 = reduced to 7 bands
+
+# Hyperparameter grids for baseline estimators
+LSD_SCLUSTER_K_VALUES = [4, 6, 8, 9, 10, 11, 12, 13, 14, 16]
+FOOTE_M_GAUSSIAN_VALUES = [8, 12, 16]
+FOOTE_L_PEAKS_VALUES = [8, 12, 16]
+
+# Fixed Foote params (placeholders – set your defaults here)
+FOOTE_PRE_FILTER = 0
+FOOTE_POST_FILTER = 0
+
+TRIM_CONDITIONS = {
+    "no_trim":              (False, False),   # (my_trim, mir_eval_trim)
+    "mir_eval_trim":        (False, True),
+    "my_trim":              (True, False),
+    "my_trim+mir_eval_trim": (True,  True),
+}
 
 # ---------------------------------------------------------------------------
 # Configuration dataclasses
@@ -40,7 +87,7 @@ class EmbeddingConfig:
     Parameters
     ----------
     model : str
-        Model name, e.g. "codicodec", "music2latent".
+        Model name.
     configs : tuple of (str, value) pairs, optional
         Each pair is (config_key, config_value).  The tuple can be:
           - empty  → no config suffix  (filename: barwise_{track_id}.npy)
@@ -158,25 +205,11 @@ class ExperimentCondition:
 # Condition generation
 # ---------------------------------------------------------------------------
 
-# Each entry: (model_name, {config_key: [possible_values], ...})
-# An empty dict means no config variants.
-MODEL_CONFIGS: dict[str, dict[str, list]] = {
-    "dac": {},
-    "codicodec":     {"discrete": [True, False]},
-    # "music2latent":  {"extract_features": [True, False]},
-    "AudioMAE": {},
-    "m2d": {"_space": ["audio", "audio_text"]}, 
-    "matpac_plus": {},
-    "MERT/m-a-p/MERT-v1-95M": {},
-    "OpenMuQ": {"_space": ["audio", "audio_text"]},
-    "musicfm": {},
-    "CLAP/laion/clap-htsat-unfused": {},  # CLAP with the "htsat-unfused" config, which is the one we used in the paper
-
-    # CLAP!
-    # Example with no config:        "wavlm": {},
-    # Example with several configs:  "dac": {"bitrate": ["8kbps", "24kbps"], "layer": [4, 8]},
-}
-
+EMBEDDING_CONFIGS = [
+    cfg
+    for model, axes in MODEL_CONFIGS.items()
+    for cfg in _expand_model_configs(model, axes)
+]
 
 def _expand_model_configs(model: str, config_axes: dict[str, list]) -> list[EmbeddingConfig]:
     """Expand a model's config axes into all EmbeddingConfig combinations."""
@@ -188,34 +221,6 @@ def _expand_model_configs(model: str, config_axes: dict[str, list]) -> list[Embe
         EmbeddingConfig(model, tuple(zip(keys, combo)))
         for combo in product(*value_lists)
     ]
-
-
-EMBEDDING_CONFIGS = [
-    cfg
-    for model, axes in MODEL_CONFIGS.items()
-    for cfg in _expand_model_configs(model, axes)
-]
-
-SIMILARITIES = ["cosine", "rbf"]
-PENALTY_WEIGHTS = [0]
-BANDS_NUMBERS = [None, 7]  # None = full kernel, 7 = reduced to 7 bands
-
-# Hyperparameter grids for baseline estimators
-LSD_SCLUSTER_K_VALUES = [4, 6, 8, 9, 10, 11, 12, 13, 14, 16]
-FOOTE_M_GAUSSIAN_VALUES = [8, 12, 16]
-FOOTE_L_PEAKS_VALUES = [8, 12, 16]
-
-# Fixed Foote params (placeholders – set your defaults here)
-FOOTE_PRE_FILTER = 0
-FOOTE_POST_FILTER = 0
-
-TRIM_CONDITIONS = {
-    "no_trim":              (False, False),   # (my_trim, mir_eval_trim)
-    "mir_eval_trim":        (False, True),
-    "my_trim":              (True, False),
-    "my_trim+mir_eval_trim": (True,  True),
-}
-
 
 def get_trim_conditions(dataset_name: str) -> dict[str, tuple[bool | None, bool]]:
     """Return trim conditions for a dataset.
@@ -229,14 +234,6 @@ def get_trim_conditions(dataset_name: str) -> dict[str, tuple[bool | None, bool]
             "mir_eval_trim": (None, True),
         }
     return TRIM_CONDITIONS
-
-# Map dataset name → (DataloaderClass, download, extra_kwargs)
-DATASET_REGISTRY: dict[str, tuple] = {
-    "rwcpop":  (RWCPopDataloader,   True, {}),
-    "salami":  (SALAMIDataloader,   True,  {"subset": "test"}),
-    "harmonix": (HarmonixDataloader, True, {}),
-}
-
 
 def build_all_conditions(include_baselines: bool = True) -> list[ExperimentCondition]:
     """Generate every combination of embedding config × estimator config."""
@@ -266,30 +263,6 @@ def build_all_conditions(include_baselines: bool = True) -> list[ExperimentCondi
                 )
 
     return conditions
-
-
-# ---------------------------------------------------------------------------
-# Spectrogram saving (optional)
-# ---------------------------------------------------------------------------
-
-def save_spectrogram(spec, save_path: str, title: str = "Spectrogram",
-                     cmap=cm.Greys, invert_y_axis: bool = True):
-    """Save a spectrogram as a PNG image."""
-    figsize = (7, 7) if spec.shape[0] == spec.shape[1] else None
-    if figsize:
-        plt.figure(figsize=figsize)
-    plt.pcolormesh(
-        np.arange(spec.shape[1]), np.arange(spec.shape[0]), spec,
-        cmap=cmap, shading="auto",
-    )
-    plt.title(title)
-    plt.xlabel("Bars")
-    plt.ylabel("Bars")
-    if invert_y_axis:
-        plt.gca().invert_yaxis()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path)
-    plt.close()
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +300,6 @@ def run_experiments(
     dataset_name: str,
     datasets_base_path: str,
     cache_path: str,
-    plot_dir: str | None = None,
     results_dir: str = "results",
 ):
     """Run all experiment conditions for a single dataset and save results."""
@@ -484,26 +456,17 @@ def main():
     )
     parser.add_argument(
         "--datasets-base-path", type=str,
-        default="/Brain/public/datasets/MIR",
+        default=DATASET_DEFAULT_PATH,
         help="Root folder containing one sub-folder per dataset.",
     )
     parser.add_argument(
         "--cache-path", type=str,
-        default="/Brain/private/a23marmo/projects/cbm_embeddings/cache",
+        default=f"{PROJECT_DEFAULT_PATH}/cache",
         help="Cache path for the dataloader.",
     )
     parser.add_argument(
-        "--save-plots", action="store_true",
-        help="Save autosimilarity spectrograms to --plot-dir.",
-    )
-    parser.add_argument(
-        "--plot-dir", type=str,
-        default="/Brain/private/a23marmo/projects/cbm_embeddings/test_plots",
-        help="Directory for spectrogram PNG files.",
-    )
-    parser.add_argument(
         "--results-dir", type=str,
-        default="/Brain/private/a23marmo/projects/cbm_embeddings/csv_results",
+        default=f"{PROJECT_DEFAULT_PATH}/csv_results",
         help="Directory for CSV result files.",
     )
     args = parser.parse_args()
@@ -512,7 +475,6 @@ def main():
         dataset_name=args.dataset,
         datasets_base_path=args.datasets_base_path,
         cache_path=args.cache_path,
-        # plot_dir=args.plot_dir if args.save_plots else None,
         results_dir=args.results_dir,
     )
 

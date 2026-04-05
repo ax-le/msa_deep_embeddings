@@ -1,7 +1,7 @@
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# Silent-segment symbols (extend this list as needed)
+# Silent-segment symbols (extend this list if needed)
 # ---------------------------------------------------------------------------
 SILENT_SYMBOLS = ["silent", "#", 'silence', 'end']
 
@@ -9,34 +9,6 @@ SILENT_SYMBOLS = ["silent", "#", 'silence', 'end']
 def escape_label(label):
     """Normalize a section label for robust silent-segment comparisons."""
     return str(label).replace("\n", "").strip().lower()
-
-
-# ---------------------------------------------------------------------------
-# Contiguity check
-# ---------------------------------------------------------------------------
-
-def check_contiguity(segments, tolerance=1e-3):
-    """Check that all segments are contiguous (each start == previous end).
-
-    Parameters
-    ----------
-    segments : np.ndarray, shape (N, 2)
-        Segments as (start, end) pairs.
-    tolerance : float, optional
-        Numerical tolerance for the comparison.  Default 1e-3.
-
-    Returns
-    -------
-    bool
-        True if every gap between consecutive segments is within *tolerance*.
-    """
-    segments = np.asarray(segments)
-    if len(segments) <= 1:
-        return True
-    for i in range(1, len(segments)):
-        if abs(segments[i, 0] - segments[i - 1, 1]) > tolerance:
-            return False
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +49,18 @@ def trim_silent_segments(annotations, labels, len_signal=None):
 
     return annotations, labels
 
+
+# ---------------------------------------------------------------------------
+# Segment trimming according to temporal information
+# ---------------------------------------------------------------------------
+
 def trim_according_to_length(segments, len_signal=None, tolerance=0.5):
-    # # Optional additional checks (disabled per request):
+    """
+    Remove segments according to temporal information: 
+        - If the segment starts at 0 (or very shotly after), remove it.
+        - If the segments ends after the end of the song, or close ot it (with a tolerance), remove it.
+    This function is used in order to trim the predicitons without needing to access annotations.
+    """
     # # Remove first segment if it starts precisely at time 0
     while len(segments) > 0 and segments[0, 0] <= 1e-3:
         segments = segments[1:]
@@ -90,10 +72,9 @@ def trim_according_to_length(segments, len_signal=None, tolerance=0.5):
 
     return segments
 
-
-
 # ---------------------------------------------------------------------------
-# Prediction trimming (position-based, to match trimmed annotations)
+# Prediction trimming (to match trimmed annotations)
+# It requires an access to annotations - not "fully unsupervised" in a way.
 # ---------------------------------------------------------------------------
 
 def trim_predictions_to_match(predictions, annotations):
@@ -199,38 +180,15 @@ def apply_my_trim(annotations, predictions, labels, len_signal, my_trim):
             new_predictions.append(np_preds)
         return new_annotations, new_predictions
 
-    if my_trim:
+    if my_trim: # Remove the silent segments.
+        ## Remove them using the annotation labels in the annotations
         annotations, _ = trim_silent_segments(annotations, labels, len_signal=len_signal)
-        # predictions = trim_predictions_to_match(predictions, annotations)
+
+        ## Remove predicted segments that start near 0 and end near/after the length of the signal 
         predictions = trim_according_to_length(predictions, len_signal=len_signal)
-    else:
+        # predictions = trim_predictions_to_match(predictions, annotations) # This requires annotations, this is not desired.
+
+    elif not my_trim: # my_trim may also be set to None, not just a boolean.
+        # If my_trim is set to False, add silent segments to match annotations.
         predictions = add_silent_segments_to_predictions(predictions, annotations, len_signal)
     return annotations, predictions
-
-
-# ---------------------------------------------------------------------------
-# Legacy my_trim (kept for backward compatibility but no longer called by
-# the dataloaders — use apply_my_trim instead)
-# ---------------------------------------------------------------------------
-
-def my_trim(all_annot, len_signal, labels, verbose = True, check_end_also=False):
-    def _silent_label_symbols():
-        # "#" is the silent symbol for RWC POP - MIREX10 set of annotations.
-        # "silence" is a silent symbol for Harmonix set of annotations.
-        return ["#", 'silence', 'end'] 
-    if all_annot[0,0] == 0: # If the first annotation is at the start of the song, remove it
-        all_annot = all_annot[1:]
-
-    if check_end_also: # Mainly used for RWC Pop and SALAMI, where they added a void segment at the end.
-        end_annot_time = all_annot[-1,1]
-        if end_annot_time >= len_signal: # If the last annotation is longer than the song, remove it
-            all_annot = all_annot[:-1]
-        elif len_signal - end_annot_time < 1: # If the last annotation is shorter than the length of the song - 1 second, remove it
-            all_annot = all_annot[:-1]
-            if labels[-1].lower() not in _silent_label_symbols(): 
-                if verbose:
-                    print(f"DEBUG MODE: Careful Axel of the future, last segment annotation is close to the song's end (less than 1 second). The code's removing it, so maybe check that it's ok. FYI, last label is {labels[-1]}.")
-        else:
-            if verbose:
-                print(f"DEBUG MODE: Careful Axel of the future, last segment annotation is actually pretty far from the song's end (more than 1 second). The code's is not removing it, check that it's ok: last annot: {all_annot[-1]}, song length: {len_signal}.FYI, last label is {labels[-1]}.")
-    return all_annot

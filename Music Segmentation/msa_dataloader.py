@@ -25,6 +25,7 @@ from beat_this.inference import File2Beats
 
 # import as_seg
 import as_seg.data_manipulation as dm
+import as_seg.model.errors as err
 
 import base_audio.signal_to_spectrogram as signal_to_spectrogram
 import trimming_utils
@@ -128,7 +129,7 @@ class MSABaseDataloader():
                 if last_beat not in downbeats:
                     downbeats = np.append(downbeats, last_beat) # Adding the as end of the song, if not already in the downbeats list. Not sure of this one, but let's see. Will probably miss the final moment of the song (like the end of the final beat), but better than nothing I guess. Should not be taken into account with trimmed evaluaton anyway.
             except IndexError:
-                print(f"No beats found for {audio_path}. This is weird actually. Check that downbeats is not empty either.")
+                warnings.warn(f"No beats found for {audio_path}. This is weird actually. Check that downbeats is not empty either.")
                 assert len(downbeats) > 1, f"No downbeats found for {audio_path}."
             return dm.frontiers_to_segments(downbeats)
 
@@ -173,14 +174,13 @@ class MSABaseDataloader():
         pathlib.Path(dir_save_path).mkdir(parents=True, exist_ok=True)
         np.save(f"{dir_save_path}/{name}.npy", segments)
 
-    def score_flat_segmentation(self, segments, annotations):
+    def score_flat_segmentation(self, segments, annotations, trim=False):
         """
         Compute the score of a flat segmentation.
         """
-        close_tolerance = dm.compute_score_of_segmentation(annotations, segments, window_length=0.5)
-        large_tolerance = dm.compute_score_of_segmentation(annotations, segments, window_length=3)
+        close_tolerance = dm.compute_score_of_segmentation(annotations, segments, window_length=0.5, trim=trim)
+        large_tolerance = dm.compute_score_of_segmentation(annotations, segments, window_length=3, trim=trim)
         return close_tolerance, large_tolerance
-    
 
 class RWCPopDataloader(MSABaseDataloader):
     """
@@ -189,7 +189,7 @@ class RWCPopDataloader(MSABaseDataloader):
 
     name = "rwcpop"
 
-    def __init__(self, datapath, cache_path = None, download=False, sr=44100, verbose = False): # feature, 
+    def __init__(self, datapath, cache_path = None, download=False, sr=44100, verbose = False):
         """
         Constructor of the RWCPopDataloader class.
 
@@ -232,6 +232,7 @@ class RWCPopDataloader(MSABaseDataloader):
         # Modifying the audio paths: now, they are named with the indexes of the songs
         # Instead of having several folders indexing from 1 to 16 containing the files.
         # This goes against the mirdata standards, but it is more convenient for me.
+        warnings.warn("Paths to RWC-Pop audio files are modified, and this is hardcoded. This modification assumes that all audio files of RWC-Pop are stored in one unique folder instead of several.")
         for a_track in self.all_tracks.values():
             a_track.audio_path = f"{datapath}/audio/{a_track.track_id}.mp3"
 
@@ -251,16 +252,6 @@ class RWCPopDataloader(MSABaseDataloader):
 
         len_signal = len(sig)/self.sr
         annotations_intervals, labels = self.get_annotations(track, len_signal=len_signal, annot_type="MIREX10")
-
-        # # Get the annotationks
-        # # Using AIST annotations, standard from MIRDATA. # AIST annotations are said to be worst than those of MIREX10, hence we preferably use the latter ones
-        # # annotations_intervals = track.sections.intervals
-
-        # # Using the MIREX10 annotations
-        # annot_path_mirex = f"{self.datapath}/annotations/mirex10_sections-main/{track_id}.BLOCKS.lab"
-        # all_annot, labels = self.get_rwcpop_annotated_segments_from_txt(annot_path_mirex, "MIREX10", return_labels=True)
-        # all_annot = np.array(all_annot)
-        # annotations_intervals = all_annot[:,0:2] # Keep only the intervals
 
         # Return the the bars, the barwise TF matrix and the annotations
         return sig, track, annotations_intervals, labels, len_signal
@@ -377,7 +368,8 @@ class RWCPopDataloader(MSABaseDataloader):
                     src = f"{self.datapath}/audio/{folder}/{file}"
                     dest = f"{self.datapath}/audio/{_filename_as_RWC(new_number_file)}.{file_extension}"
 
-                    print(f"Copying {src} to {dest}")
+                    if self.verbose:
+                        print(f"Copying {src} to {dest}")
                     shutil.copy(src, dest)
 
                     count_files += 1
@@ -465,8 +457,8 @@ class SALAMIDataloader(MSABaseDataloader):
             # Return the signal, track, annotations, labels, and signal length
             return sig, track, annotations_intervals, labels, len_signal
     
-        except FileNotFoundError:
-            print(f'{track_id} not found.')
+        except FileNotFoundError: # Handling file not found errors without throwing errors. Must be catched later on.
+            warnings.warn(f'{track_id} not found.')
             return None, None, None, None, None
             # raise FileNotFoundError(f"Song {track_id} not found, normal ?") from None
 
@@ -564,19 +556,6 @@ class SALAMIDataloader(MSABaseDataloader):
         if len(list_annots) == 1:
             return list_annots[0], list_labels[0]
         return list_annots, list_labels
-
-
-
-    # def format_dataset(self, path_audio_files): # TODO
-        # # Copy audio files to the right location.
-        # # Suppose that the audio files are all in the same folder
-        # for track_num in range(len(self.all_tracks)):
-        #     track_idx = self.indexes[track_num]
-        #     song_file_name = self.all_tracks[track_idx].audio_path.split('/')[-1]
-        #     src = f"{path_audio_files}/{song_file_name}" # May change depending on your file structure
-        #     dest = self.all_tracks[track_idx].audio_path
-        #     pathlib.Path(dest).parent.absolute().mkdir(parents=True, exist_ok=True)
-        #     shutil.copy(src, dest)
     
 class BeatlesDataloader(MSABaseDataloader):
     """
@@ -649,7 +628,7 @@ class BeatlesDataloader(MSABaseDataloader):
     #     """
     #     return len(self.all_tracks) # Why not just len(indexes, an in the base class?)
 
-class Track: # For Hamronix, because it is not supported by mirdata
+class HarmonixTrack: # Creating a special Track object for Hamronix, because it is not supported by mirdata
     def __init__(self, track_id, audio_path):
         self.track_id = track_id
         self.audio_path = audio_path
@@ -694,7 +673,7 @@ class HarmonixDataloader(MSABaseDataloader):
         self.indexes = []
         for path in raw_audio_files_list:
             track_id = path.split(".mp3")[0]
-            self.all_tracks[track_id] = Track(track_id, f"{self.datapath}/audio/{path}")
+            self.all_tracks[track_id] = HarmonixTrack(track_id, f"{self.datapath}/audio/{path}")
             self.indexes.append(track_id)
 
     def __getitem__(self, index):
@@ -719,7 +698,6 @@ class HarmonixDataloader(MSABaseDataloader):
         For Harmonix, silences at the edges (leading/trailing segments with "silence" or "end" labels)
         are automatically trimmed to avoid issues with boundary-based evaluation.
         """
-        track_id = track.track_id
         annot_path = f"{self.datapath}/annotations/harmonix_segments/{track.track_id}.txt"
         all_annot, labels = self.get_harmonix_annotated_segments_from_txt(annot_path, return_labels=True)
         if len(labels) > len(all_annot):
@@ -752,19 +730,3 @@ class HarmonixDataloader(MSABaseDataloader):
         if return_labels:
             return segments, all_labels
         return segments
-
-# if __name__ == "__main__":
-#     rwcpop = RWCPopDataloader('/home/a23marmo/datasets/rwcpop', feature = "mel", cache_path = "/home/a23marmo/datasets/rwcpop/cache")
-#     # rwcpop.format_dataset('/home/a23marmo/Bureau/Audio samples/rwcpop/Entire RWC')
-    
-#     print(len(rwcpop))
-#     for track_id, bars, barwise_tf_matrix, annotations in rwcpop:
-#         print(track_id)
-
-#     # salami = SALAMIDataloader('/home/a23marmo/datasets/salami', feature = "mel", cache_path = '/home/a23marmo/datasets/salami/cache', subset = "train")
-
-#     # for track_id, bars, barwise_tf_matrix, dict_annotations in salami:
-#     #     try:
-#     #         print(track_id)
-#     #     except FileNotFoundError:
-#     #         print(f'{track_id} not found.')

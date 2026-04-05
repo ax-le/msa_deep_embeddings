@@ -19,10 +19,24 @@ from as_seg.CBM_algorithm import CBMEstimator
 from as_seg.baseline_segmenter.baseline_estimators import FooteEstimator, LSDEstimator
 from msa_dataloader import HarmonixDataloader, RWCPopDataloader, SALAMIDataloader
 
+# ---------------------------------------------------------------------------
+# Hardcoded paths
+# ---------------------------------------------------------------------------
+
+DATASET_DEFAULT_PATH = "/Brain/public/datasets/MIR"
+PROJECT_DEFAULT_PATH = "/Brain/private/a23marmo/projects/cbm_embeddings"
+
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
+# Map dataset name -> (DataloaderClass, download, extra_kwargs)
+DATASET_REGISTRY: dict[str, tuple] = {
+    "rwcpop": (RWCPopDataloader, True, {}),
+    "salami": (SALAMIDataloader, True, {"subset": "test"}),
+    "harmonix": (HarmonixDataloader, True, {}),
+}
 
 SIMILARITIES = ["cosine", "rbf"]
 PENALTY_WEIGHTS = [0]
@@ -42,13 +56,6 @@ TRIM_CONDITIONS = {
     "mir_eval_trim": (False, True),
     "my_trim": (True, False),
     "my_trim+mir_eval_trim": (True, True),
-}
-
-# Map dataset name -> (DataloaderClass, download, extra_kwargs)
-DATASET_REGISTRY: dict[str, tuple] = {
-    "rwcpop": (RWCPopDataloader, True, {}),
-    "salami": (SALAMIDataloader, True, {"subset": "test"}),
-    "harmonix": (HarmonixDataloader, True, {}),
 }
 
 
@@ -369,21 +376,21 @@ def main():
         help="Dataset to evaluate (default: rwcpop).",
     )
     parser.add_argument(
-        "--datasets-base-path",
+        "--datasets-base-path", 
         type=str,
-        default="/Brain/public/datasets/MIR",
+        default=DATASET_DEFAULT_PATH,
         help="Root folder containing one sub-folder per dataset.",
     )
     parser.add_argument(
-        "--cache-path",
+        "--cache-path", 
         type=str,
-        default="/Brain/private/a23marmo/projects/cbm_embeddings/cache",
-        help="Cache path root for the dataloaders.",
+        default=f"{PROJECT_DEFAULT_PATH}/cache",
+        help="Cache path for the dataloader.",
     )
     parser.add_argument(
-        "--results-dir",
+        "--results-dir", 
         type=str,
-        default="/Brain/private/a23marmo/projects/cbm_embeddings/csv_results",
+        default=f"{PROJECT_DEFAULT_PATH}/csv_results",
         help="Directory for CSV result files.",
     )
     parser.add_argument(

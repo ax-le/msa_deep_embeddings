@@ -1,0 +1,1 @@
+A small package to be installed in each venv in order to help the embeddings computation.

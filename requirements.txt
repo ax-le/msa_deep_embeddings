@@ -1,0 +1,9 @@
+librosa
+mirdata
+pathlib
+numpy
+beat_this
+as_seg >= 0.1.12 # Not on PyPi, I lost access, in the meantime install it from git: https://github.com/ax-le/autosimilarity_segmentation/
+base_audio
+pandas
+sklearn
