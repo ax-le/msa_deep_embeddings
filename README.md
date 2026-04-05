@@ -15,5 +15,8 @@ For each model, we installed the small `embed_utils` package (using pip), contai
 ## Music Structure Analysis
 The main code for segmentation is contained in the `as_seg` package (https://gitlab.imt-atlantique.fr/a23marmo/autosimilarity_segmentation).
 
+!warning
+    Please note that the package is not updated on PyPi yet, so installing the package using the pip automatic install will surely result in errors. Instead, you should either install it from the git repo (using pip), or by downloading the sources locally and then install this version. Sorry for the inconvenience.
+
 ## Troubleshooting
 Please open issues if you encounter problems, or send me mail at axel.marmoret at imt-atlantique.fr. Many thanks!
