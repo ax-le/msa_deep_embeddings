@@ -2,7 +2,7 @@
 
 Drop of the code for the SMC submission "Unsupervised Evaluation of Deep Audio Embeddings for Music Structure Analysis". 
 
-### About code quality
+### About code quality
 The code is not properly formatted for open-source use, and may be unstable, sorry about that. In near future, I will make it better, but, as of now, experiments may be reproduced using the "run_experiments.py" file.
 
 ## Embedding computation
@@ -12,8 +12,8 @@ Hence, we first compute embeddings using a different venv for each model. We use
 
 For each model, we installed the small `embed_utils` package (using pip), contained in "Compute Embeddings" folder, than contained important functions for pre- and post-processing the embeddings.
 
-### Download embeddings and bars
-Embeddings are available at this zenodo link: TODO. (will be done after ICASSP 2026, so mid-May)
+### Download embeddings and bars
+Embeddings are available at this zenodo link: https://zenodo.org/records/20155502
 
 ## Music Structure Analysis
 The main code for segmentation is contained in the `as_seg` package (https://gitlab.imt-atlantique.fr/a23marmo/autosimilarity_segmentation).
